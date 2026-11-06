@@ -1,0 +1,6 @@
+{
+  "name": "CrewPay — Global Payroll & Financial Operations",
+  "description": "International payroll, multi-currency treasury, and global workforce financial operations platform for modern distributed enterprises.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
