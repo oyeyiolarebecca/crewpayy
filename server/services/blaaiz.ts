@@ -195,21 +195,23 @@ export class BlaaizService {
   private environment: 'sandbox' | 'production' | 'simulation';
   private baseUrl: string;
   private cachedToken: { token: string; expiresAt: number } | null = null;
+  private readonly requestTimeoutMs = 15_000;
 
   constructor() {
     this.clientId = process.env.BLAAIZ_CLIENT_ID || '';
     this.clientSecret = process.env.BLAAIZ_CLIENT_SECRET || '';
     const envSetting = (process.env.BLAAIZ_ENV || 'sandbox').toLowerCase();
-    
+    const configuredBaseUrl = process.env.BLAAIZ_BASE_URL?.replace(/\/$/, '');
+
     if (!this.clientId || !this.clientSecret) {
       this.environment = 'simulation';
-      this.baseUrl = 'https://api-sandbox.blaaiz.com';
+      this.baseUrl = configuredBaseUrl || 'https://api-sandbox.blaaiz.com';
     } else if (envSetting === 'production') {
       this.environment = 'production';
-      this.baseUrl = 'https://api-prod.blaaiz.com';
+      this.baseUrl = configuredBaseUrl || 'https://api-prod.blaaiz.com';
     } else {
       this.environment = 'sandbox';
-      this.baseUrl = 'https://api-sandbox.blaaiz.com';
+      this.baseUrl = configuredBaseUrl || 'https://api-sandbox.blaaiz.com';
     }
   }
 
@@ -244,40 +246,80 @@ export class BlaaizService {
       return this.cachedToken.token;
     }
 
+    const response = await this.request('/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        grant_type: 'client_credentials',
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+      }),
+    });
+    const data = await response.json() as { access_token?: string; expires_in?: number };
+    if (!data.access_token) {
+      throw new Error('Blaaiz OAuth response did not contain an access token.');
+    }
+
+    const expiresIn = Number(data.expires_in) || 3600;
+    this.cachedToken = {
+      token: data.access_token,
+      expiresAt: Date.now() + Math.max(expiresIn - 60, 1) * 1000,
+    };
+    return this.cachedToken.token;
+  }
+
+  private async request(path: string, init: RequestInit = {}): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    const headers = new Headers(init.headers);
+
     try {
-      const response = await fetch(`${this.baseUrl}/oauth/token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          grant_type: 'client_credentials',
-          client_id: this.clientId,
-          client_secret: this.clientSecret,
-        }),
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        ...init,
+        headers,
+        signal: controller.signal,
       });
 
       if (!response.ok) {
-        throw new Error(`Blaaiz OAuth failed with status ${response.status}`);
+        const detail = await response.text().catch(() => '');
+        throw new Error(`Blaaiz request failed (${response.status})${detail ? `: ${detail.slice(0, 300)}` : ''}`);
       }
-
-      const data = await response.json();
-      const expiresIn = data.expires_in || 3600;
-      this.cachedToken = {
-        token: data.access_token,
-        expiresAt: Date.now() + (expiresIn - 60) * 1000,
-      };
-      return this.cachedToken.token;
-    } catch (err: any) {
-      console.warn(`[Blaaiz] OAuth fallback to simulation: ${err.message}`);
-      return 'simulated_fallback_token';
+      return response;
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        throw new Error(`Blaaiz request timed out after ${this.requestTimeoutMs}ms.`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
+  }
+
+  private async authenticatedRequest(path: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers);
+    headers.set('Authorization', `Bearer ${await this.getAccessToken()}`);
+    headers.set('Accept', 'application/json');
+    if (init.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    return this.request(path, { ...init, headers });
+  }
+
+  private static unwrap<T>(payload: any, key: string): T {
+    return (payload?.[key] ?? payload?.data?.[key] ?? payload?.data ?? payload) as T;
   }
 
   /**
    * Get Multi-Currency Balances & Virtual Bank Accounts
    */
   public async getWallets(): Promise<BlaaizWallet[]> {
+    if (this.environment !== 'simulation') {
+      const response = await this.authenticatedRequest(process.env.BLAAIZ_WALLETS_PATH || '/wallets');
+      const payload = await response.json();
+      return BlaaizService.unwrap<BlaaizWallet[]>(payload, 'wallets');
+    }
     return mockWallets;
   }
 
@@ -287,16 +329,25 @@ export class BlaaizService {
   public async getQuote(request: BlaaizQuoteRequest): Promise<BlaaizQuoteResponse> {
     const { fromCurrency, toCurrency, recipientsCount, totalToAmount } = request;
 
+    if (this.environment !== 'simulation') {
+      const response = await this.authenticatedRequest(process.env.BLAAIZ_QUOTE_PATH || '/quote', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
+      const payload = await response.json();
+      return BlaaizService.unwrap<BlaaizQuoteResponse>(payload, 'quote');
+    }
+
     // Calculate conversion
     const fromRate = FX_RATES_TO_USD[fromCurrency] || 1.0;
     const toRate = FX_RATES_TO_USD[toCurrency] || 1.0;
 
     // e.g. 1 USD = (toRate / fromRate) targetCurrency
     const fxRate = Number((toRate / fromRate).toFixed(4));
-    
+
     // Subtotal from currency needed to deliver exact totalToAmount
     const subtotalFromAmount = Number((totalToAmount / fxRate).toFixed(2));
-    
+
     // Transparent Fee Model
     const fixedFeePerRecipient = toCurrency === 'NGN' ? 0.50 : 2.50; // USD
     const networkFeeRate = 0.002; // 0.2%
@@ -341,6 +392,22 @@ export class BlaaizService {
    * Execute Batch Payroll or Single Payout via Blaaiz Payout API
    */
   public async executePayoutBatch(batch: BlaaizPayoutBatchRequest): Promise<BlaaizTransactionRecord> {
+    if (!batch.sourceCurrency || !batch.corridor || !batch.recipients.length) {
+      throw new Error('A source currency, target corridor, and at least one recipient are required.');
+    }
+
+    if (this.environment !== 'simulation') {
+      const response = await this.authenticatedRequest(process.env.BLAAIZ_PAYOUT_PATH || '/payout', {
+        method: 'POST',
+        headers: {
+          'Idempotency-Key': batch.reference || `crewpay-${Date.now()}`,
+        },
+        body: JSON.stringify(batch),
+      });
+      const payload = await response.json();
+      return BlaaizService.unwrap<BlaaizTransactionRecord>(payload, 'transaction');
+    }
+
     // Check wallet debit
     const sourceWallet = mockWallets.find((w) => w.currency === batch.sourceCurrency);
     const targetCurrency = batch.corridor;
