@@ -1263,6 +1263,7 @@ export default function App() {
                   activeSection={activeSection}
                   organisations={organisations}
                   employees={employees}
+                  transactions={transactions}
                   auditLogs={auditLogs}
                   onVerifyEmployeeBank={handleVerifyEmployeeBank}
                   onResolveAuditFlag={handleResolveAuditFlag}

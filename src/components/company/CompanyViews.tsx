@@ -95,6 +95,13 @@ export const CompanyViews: React.FC<CompanyViewsProps> = ({
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
 
+  // Payroll-specific transaction history filters
+  const [payrollSearch, setPayrollSearch] = useState('');
+  const [payrollStatusFilter, setPayrollStatusFilter] = useState<string>('all');
+  const [payrollCurrencyFilter, setPayrollCurrencyFilter] = useState<string>('all');
+  const [payrollTypeFilter, setPayrollTypeFilter] = useState<string>('all');
+  const [txnTypeFilter, setTxnTypeFilter] = useState<string>('all');
+
   // Employee directory states
   const [empSearch, setEmpSearch] = useState('');
   const [empDeptFilter, setEmpDeptFilter] = useState('all');
@@ -148,9 +155,61 @@ export const CompanyViews: React.FC<CompanyViewsProps> = ({
         txnStatusFilter === 'all' || t.status === txnStatusFilter;
       const matchesCurr =
         txnCurrencyFilter === 'all' || t.currency === txnCurrencyFilter;
-      return matchesQuery && matchesStatus && matchesCurr;
+      const matchesType =
+        txnTypeFilter === 'all' || t.type === txnTypeFilter;
+      return matchesQuery && matchesStatus && matchesCurr && matchesType;
     });
-  }, [transactions, txnSearch, txnStatusFilter, txnCurrencyFilter]);
+  }, [transactions, txnSearch, txnStatusFilter, txnCurrencyFilter, txnTypeFilter]);
+
+  const payrollTransactions = useMemo(() => {
+    return transactions.filter((t) => {
+      const isSalaryCategory =
+        t.type === 'Payroll' ||
+        t.type === 'Bonus' ||
+        t.type === 'Contractor Invoice';
+      const matchesType =
+        payrollTypeFilter === 'all' || t.type === payrollTypeFilter;
+      const matchesQuery =
+        t.employeeName.toLowerCase().includes(payrollSearch.toLowerCase()) ||
+        t.reference.toLowerCase().includes(payrollSearch.toLowerCase()) ||
+        t.department.toLowerCase().includes(payrollSearch.toLowerCase());
+      const matchesStatus =
+        payrollStatusFilter === 'all' || t.status === payrollStatusFilter;
+      const matchesCurrency =
+        payrollCurrencyFilter === 'all' || t.currency === payrollCurrencyFilter;
+      return (
+        isSalaryCategory &&
+        matchesType &&
+        matchesQuery &&
+        matchesStatus &&
+        matchesCurrency
+      );
+    });
+  }, [
+    transactions,
+    payrollTypeFilter,
+    payrollSearch,
+    payrollStatusFilter,
+    payrollCurrencyFilter,
+  ]);
+
+  const handleExportPayrollCsv = () => {
+    const headers =
+      'Reference,Payee,Department,Category,LocalAmount,Currency,AmountUSD,FXRate,Rail,Status,Date';
+    const rows = payrollTransactions.map(
+      (t) =>
+        `${t.reference},"${t.employeeName}","${t.department}",${t.type},${t.amountLocal},${t.currency},${t.amountUsd},${t.fxRate},"${t.settlementRail}",${t.status},"${t.date}"`
+    );
+    const blob = new Blob([[headers, ...rows].join('\n')], {
+      type: 'text/csv',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'crewpay-salary-disbursement-history.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const filteredEmployees = useMemo(() => {
     return employees.filter((e) => {
@@ -608,6 +667,247 @@ export const CompanyViews: React.FC<CompanyViewsProps> = ({
             </Card>
           ))}
         </motion.div>
+
+        {/* 2. DEDICATED SALARY & PAYROLL DISBURSEMENT HISTORY */}
+        <motion.div variants={staggerItem}>
+          <Card surface="white" padding="none" className="overflow-hidden">
+            <div className="p-5 border-b border-[#14213D]/10 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[#FAF9F6]">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-[#14213D]">
+                    Salary & Payroll Disbursement History
+                  </h3>
+                  <span className="text-[11px] font-mono-tabular font-bold px-2.5 py-0.5 rounded-full bg-[#C9F2DF] text-[#0F6E46]">
+                    {payrollTransactions.length} Executed Runs
+                  </span>
+                </div>
+                <p className="text-xs text-[#252A34]/65 mt-0.5">
+                  Complete historical record of disbursed salaries, contractor fees, and banking rail execution telemetry.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="w-full sm:w-60">
+                  <InputField
+                    placeholder="Search payee or reference..."
+                    value={payrollSearch}
+                    onChange={(e) => setPayrollSearch(e.target.value)}
+                    leftIcon={<Search className="w-4 h-4" />}
+                  />
+                </div>
+
+                <Dropdown
+                  value={payrollTypeFilter}
+                  onChange={setPayrollTypeFilter}
+                  options={[
+                    { value: 'all', label: 'All Payout Types' },
+                    { value: 'Payroll', label: 'Regular Salary' },
+                    { value: 'Bonus', label: 'Off-Cycle Bonus' },
+                    { value: 'Contractor Invoice', label: 'Contractor Invoice' },
+                  ]}
+                />
+
+                <Dropdown
+                  value={payrollCurrencyFilter}
+                  onChange={setPayrollCurrencyFilter}
+                  options={[
+                    { value: 'all', label: 'All Currencies' },
+                    { value: 'USD', label: 'USD ($)' },
+                    { value: 'EUR', label: 'EUR (€)' },
+                    { value: 'GBP', label: 'GBP (£)' },
+                    { value: 'NGN', label: 'NGN (₦)' },
+                    { value: 'SGD', label: 'SGD (S$)' },
+                    { value: 'CAD', label: 'CAD (C$)' },
+                  ]}
+                />
+
+                <Button
+                  variant="outline"
+                  size="md"
+                  leftIcon={<Download className="w-3.5 h-3.5" />}
+                  onClick={handleExportPayrollCsv}
+                >
+                  Export CSV
+                </Button>
+              </div>
+            </div>
+
+            {/* Filter Status Tabs */}
+            <div className="px-5 py-2.5 bg-white border-b border-[#14213D]/8 flex items-center justify-between gap-4 overflow-x-auto">
+              <div className="flex items-center gap-1.5">
+                {[
+                  { id: 'all', label: 'All Disbursals' },
+                  { id: 'completed', label: 'Completed' },
+                  { id: 'processing', label: 'In Clearing' },
+                  { id: 'pending_approval', label: 'Awaiting Sign-off' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setPayrollStatusFilter(tab.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+                      payrollStatusFilter === tab.id
+                        ? 'bg-[#EEEAFE] text-[#14213D] font-semibold'
+                        : 'text-[#252A34]/65 hover:text-[#14213D] hover:bg-[#FAF9F6]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <div className="text-xs text-[#252A34]/60 font-mono-tabular shrink-0">
+                Total Salary Disbursed:{' '}
+                <span className="font-bold text-[#14213D]">
+                  ${payrollTransactions.reduce((acc, t) => acc + t.amountUsd, 0).toLocaleString()} USD
+                </span>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-[#14213D]/10 text-[11px] font-semibold text-[#252A34]/60 bg-[#FAF9F6]/50">
+                    <th className="py-3 px-5">Reference & Value Date</th>
+                    <th className="py-3 px-4">Payee & Department</th>
+                    <th className="py-3 px-4">Disbursal Type & Rail</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Net Payout Local</th>
+                    <th className="py-3 px-4 text-right">USD Equivalent</th>
+                    <th className="py-3 px-5 text-right">Breakdown</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#14213D]/8 text-sm">
+                  {payrollTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-xs text-[#252A34]/60">
+                        No salary or payroll records match your current filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    payrollTransactions.map((txn) => (
+                      <tr
+                        key={txn.id}
+                        onClick={() => setSelectedTransaction(txn)}
+                        className="hover:bg-[#FAF9F6] transition-colors cursor-pointer"
+                      >
+                        <td className="py-3.5 px-5">
+                          <div className="font-mono-tabular font-semibold text-xs text-[#14213D]">
+                            {txn.reference}
+                          </div>
+                          <div className="text-[11px] text-[#252A34]/55 font-mono-tabular mt-0.5">
+                            {txn.date}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-[#14213D]">
+                            {txn.employeeName}
+                          </div>
+                          <div className="text-[11px] text-[#252A34]/60">
+                            {txn.department}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="text-xs font-semibold text-[#14213D]">
+                            {txn.type}
+                          </div>
+                          <div className="text-[11px] text-[#4169E1] font-mono-tabular">
+                            {txn.settlementRail}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <StatusBadge status={txn.status} />
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono-tabular font-bold text-[#14213D]">
+                          {txn.amountLocal.toLocaleString()} {txn.currency}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono-tabular text-xs text-[#252A34]/75">
+                          ${txn.amountUsd.toLocaleString()}
+                        </td>
+                        <td className="py-3.5 px-5 text-right">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTransaction(txn);
+                            }}
+                            className="p-1.5 rounded-lg text-[#252A34]/60 hover:text-[#14213D] hover:bg-[#EEEAFE] transition-colors"
+                            title="View Payout Breakdown"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </motion.div>
+
+        {/* Selected Transaction Details Modal inside company_payroll */}
+        <Modal
+          isOpen={Boolean(selectedTransaction)}
+          onClose={() => setSelectedTransaction(null)}
+          title="Salary Disbursement Statement & Clearing Telemetry"
+          subtitle="Tax-certified breakdown and banking rail confirmation."
+          footer={
+            <Button variant="primary" onClick={() => setSelectedTransaction(null)}>
+              Close Breakdown
+            </Button>
+          }
+        >
+          {selectedTransaction && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-[#FAF9F6] border border-[#14213D]/10 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-[#252A34]/60 font-mono-tabular">
+                    Reference: {selectedTransaction.reference}
+                  </div>
+                  <div className="text-2xl font-bold font-mono-tabular text-[#14213D] mt-1">
+                    {selectedTransaction.amountLocal.toLocaleString()} {selectedTransaction.currency}
+                  </div>
+                  <div className="text-xs text-[#252A34]/65 mt-0.5 font-mono-tabular">
+                    USD Equivalent: ${selectedTransaction.amountUsd.toLocaleString()} · FX Locked at{' '}
+                    {selectedTransaction.fxRate}
+                  </div>
+                </div>
+                <StatusBadge status={selectedTransaction.status} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3.5 rounded-lg border border-[#14213D]/10">
+                  <div className="text-[#252A34]/55">Beneficiary & Department</div>
+                  <div className="font-bold text-[#14213D] text-sm mt-0.5">
+                    {selectedTransaction.employeeName}
+                  </div>
+                  <div className="text-[#252A34]/65">{selectedTransaction.department}</div>
+                </div>
+                <div className="p-3.5 rounded-lg border border-[#14213D]/10">
+                  <div className="text-[#252A34]/55">Payment Rail & Category</div>
+                  <div className="font-bold text-[#14213D] text-sm mt-0.5">
+                    {selectedTransaction.settlementRail}
+                  </div>
+                  <div className="text-[#252A34]/65">{selectedTransaction.type}</div>
+                </div>
+                <div className="p-3.5 rounded-lg border border-[#14213D]/10">
+                  <div className="text-[#252A34]/55">Value Date / Execution</div>
+                  <div className="font-bold text-[#14213D] text-sm mt-0.5 font-mono-tabular">
+                    {selectedTransaction.date}
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-lg border border-[#14213D]/10">
+                  <div className="text-[#252A34]/55">Clearing Guarantee</div>
+                  <div className="font-bold text-[#0F6E46] text-sm mt-0.5 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Instant Direct Credit</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </Modal>
       </motion.div>
     );
   }

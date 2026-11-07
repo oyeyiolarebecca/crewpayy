@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import {
   ShieldCheck,
@@ -9,12 +9,20 @@ import {
   Search,
   Lock,
   Check,
+  Download,
+  Eye,
+  RefreshCw,
+  Wallet,
+  Clock,
+  ArrowUpRight,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   AdminAuditLog,
   Employee,
   NavSectionId,
   Organisation,
+  Transaction,
 } from '../../types/crewpay';
 import {
   Button,
@@ -22,6 +30,8 @@ import {
   StatusBadge,
   InputField,
   AnimatedCounter,
+  Modal,
+  Dropdown,
 } from '../ui/DesignSystem';
 
 interface AdminViewsProps {
@@ -29,6 +39,7 @@ interface AdminViewsProps {
   organisations: Organisation[];
   employees: Employee[];
   auditLogs: AdminAuditLog[];
+  transactions?: Transaction[];
   onVerifyEmployeeBank: (empId: string) => void;
   onResolveAuditFlag: (logId: string) => void;
 }
@@ -38,11 +49,18 @@ export const AdminViews: React.FC<AdminViewsProps> = ({
   organisations,
   employees,
   auditLogs,
+  transactions = [],
   onVerifyEmployeeBank,
   onResolveAuditFlag,
 }) => {
   const prefersReducedMotion = useReducedMotion();
   const [auditSearch, setAuditSearch] = useState('');
+
+  // Salary transaction history state for Admin
+  const [txnSearch, setTxnSearch] = useState('');
+  const [txnStatusFilter, setTxnStatusFilter] = useState('all');
+  const [txnCurrencyFilter, setTxnCurrencyFilter] = useState('all');
+  const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
 
   const unverifiedEmployees = employees.filter(
     (e) => e.accountStatus !== 'verified'
@@ -55,6 +73,44 @@ export const AdminViews: React.FC<AdminViewsProps> = ({
       l.actor.toLowerCase().includes(auditSearch.toLowerCase()) ||
       l.entityName.toLowerCase().includes(auditSearch.toLowerCase())
   );
+
+  // Filter salary & payroll transactions across all corporate entities
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((t) => {
+      const matchesSearch =
+        t.employeeName.toLowerCase().includes(txnSearch.toLowerCase()) ||
+        t.reference.toLowerCase().includes(txnSearch.toLowerCase()) ||
+        t.department.toLowerCase().includes(txnSearch.toLowerCase()) ||
+        t.settlementRail.toLowerCase().includes(txnSearch.toLowerCase());
+      const matchesStatus =
+        txnStatusFilter === 'all' || t.status === txnStatusFilter;
+      const matchesCurrency =
+        txnCurrencyFilter === 'all' || t.currency === txnCurrencyFilter;
+      return matchesSearch && matchesStatus && matchesCurrency;
+    });
+  }, [transactions, txnSearch, txnStatusFilter, txnCurrencyFilter]);
+
+  const totalSalaryVolumeUsd = useMemo(() => {
+    return transactions.reduce((acc, t) => acc + (t.amountUsd || 0), 0);
+  }, [transactions]);
+
+  const handleExportAdminCsv = () => {
+    const headers =
+      'Reference,Beneficiary,Department,Category,LocalAmount,Currency,AmountUSD,FXRate,Rail,Status,Date';
+    const rows = filteredTransactions.map(
+      (t) =>
+        `${t.reference},"${t.employeeName}","${t.department}",${t.type},${t.amountLocal},${t.currency},${t.amountUsd},${t.fxRate},"${t.settlementRail}",${t.status},"${t.date}"`
+    );
+    const blob = new Blob([[headers, ...rows].join('\n')], {
+      type: 'text/csv',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'crewpay-platform-salary-transactions.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const staggerContainer = {
     hidden: { opacity: 0 },
@@ -99,10 +155,13 @@ export const AdminViews: React.FC<AdminViewsProps> = ({
 
         <Card surface="lavender">
           <div className="text-xs font-semibold text-[#14213D]/75">
-            Monthly Clearing Volume
+            Global Salary Volume Disbursed
           </div>
           <div className="text-3xl font-bold text-[#14213D] mt-2 font-mono-tabular">
-            <AnimatedCounter value={2640800} prefix="$" />
+            <AnimatedCounter
+              value={totalSalaryVolumeUsd > 0 ? totalSalaryVolumeUsd : 2640800}
+              prefix="$"
+            />
           </div>
           <div className="text-xs text-[#14213D]/75 mt-1.5">
             Across 6 regulated currency rails
@@ -194,7 +253,175 @@ export const AdminViews: React.FC<AdminViewsProps> = ({
         </motion.div>
       )}
 
-      {/* 3. BENEFICIARY ACCOUNT KYC VERIFICATION QUEUE */}
+      {/* 3. PLATFORM-WIDE SALARY & PAYROLL SETTLEMENT LEDGER (NEW: ADMIN SALARY TRACKING) */}
+      {(activeSection === 'admin_overview' ||
+        activeSection === 'admin_compliance') && (
+        <motion.div variants={staggerItem}>
+          <Card surface="white" padding="none" className="overflow-hidden">
+            <div className="p-5 border-b border-[#14213D]/10 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[#FAF9F6]">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-[#14213D]">
+                    Platform-Wide Salary & Payroll Settlement Ledger
+                  </h3>
+                  <span className="text-[11px] font-mono-tabular font-bold px-2 py-0.5 rounded-full bg-[#EEEAFE] text-[#4169E1]">
+                    {filteredTransactions.length} Payouts
+                  </span>
+                </div>
+                <p className="text-xs text-[#252A34]/65 mt-0.5">
+                  Audit real-time salary disbursements, contractor fees, and banking rail execution across all subsidiaries.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="w-full sm:w-60">
+                  <InputField
+                    placeholder="Search payee or reference..."
+                    value={txnSearch}
+                    onChange={(e) => setTxnSearch(e.target.value)}
+                    leftIcon={<Search className="w-4 h-4" />}
+                  />
+                </div>
+
+                <Dropdown
+                  value={txnCurrencyFilter}
+                  onChange={setTxnCurrencyFilter}
+                  options={[
+                    { value: 'all', label: 'All Currencies' },
+                    { value: 'USD', label: 'USD ($)' },
+                    { value: 'EUR', label: 'EUR (€)' },
+                    { value: 'GBP', label: 'GBP (£)' },
+                    { value: 'NGN', label: 'NGN (₦)' },
+                    { value: 'SGD', label: 'SGD (S$)' },
+                    { value: 'CAD', label: 'CAD (C$)' },
+                  ]}
+                />
+
+                <Button
+                  variant="outline"
+                  size="md"
+                  leftIcon={<Download className="w-3.5 h-3.5" />}
+                  onClick={handleExportAdminCsv}
+                >
+                  Export CSV
+                </Button>
+              </div>
+            </div>
+
+            {/* Filter Pills */}
+            <div className="px-5 py-2.5 bg-white border-b border-[#14213D]/8 flex items-center justify-between gap-4 overflow-x-auto">
+              <div className="flex items-center gap-1.5">
+                {[
+                  { id: 'all', label: 'All Settlements' },
+                  { id: 'completed', label: 'Settled' },
+                  { id: 'processing', label: 'In Clearing' },
+                  { id: 'pending_approval', label: 'Awaiting Sign-off' },
+                  { id: 'failed', label: 'Exceptions' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setTxnStatusFilter(tab.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+                      txnStatusFilter === tab.id
+                        ? 'bg-[#EEEAFE] text-[#14213D] font-semibold'
+                        : 'text-[#252A34]/65 hover:text-[#14213D] hover:bg-[#FAF9F6]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <div className="text-xs text-[#252A34]/60 font-mono-tabular shrink-0">
+                100% Pre-Funded Settlement Rails
+              </div>
+            </div>
+
+            {/* Salary Ledger Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-[#14213D]/10 text-[11px] font-semibold text-[#252A34]/60 bg-[#FAF9F6]/50">
+                    <th className="py-3 px-5">Transaction Ref & Value Date</th>
+                    <th className="py-3 px-4">Payee & Department</th>
+                    <th className="py-3 px-4">Type & Settlement Rail</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Disbursed Local</th>
+                    <th className="py-3 px-4 text-right">USD Equivalent</th>
+                    <th className="py-3 px-5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#14213D]/8 text-sm">
+                  {filteredTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-xs text-[#252A34]/60">
+                        No salary or payroll transactions match the filter criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredTransactions.map((txn) => (
+                      <tr
+                        key={txn.id}
+                        onClick={() => setSelectedTxn(txn)}
+                        className="hover:bg-[#FAF9F6] transition-colors cursor-pointer"
+                      >
+                        <td className="py-3.5 px-5">
+                          <div className="font-mono-tabular font-semibold text-xs text-[#14213D]">
+                            {txn.reference}
+                          </div>
+                          <div className="text-[11px] text-[#252A34]/55 font-mono-tabular mt-0.5">
+                            {txn.date}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-[#14213D]">
+                            {txn.employeeName}
+                          </div>
+                          <div className="text-[11px] text-[#252A34]/60">
+                            {txn.department}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="text-xs font-semibold text-[#14213D]">
+                            {txn.type}
+                          </div>
+                          <div className="text-[11px] text-[#4169E1] font-mono-tabular">
+                            {txn.settlementRail}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <StatusBadge status={txn.status} />
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono-tabular font-bold text-[#14213D]">
+                          {txn.amountLocal.toLocaleString()} {txn.currency}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono-tabular text-xs text-[#252A34]/75">
+                          ${txn.amountUsd.toLocaleString()}
+                        </td>
+                        <td className="py-3.5 px-5 text-right">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTxn(txn);
+                            }}
+                            className="p-1.5 rounded-lg text-[#252A34]/60 hover:text-[#14213D] hover:bg-[#EEEAFE] transition-colors"
+                            title="Audit Transaction Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* 4. BENEFICIARY ACCOUNT KYC VERIFICATION QUEUE */}
       <motion.div variants={staggerItem}>
         <Card surface="white" padding="lg">
           <div className="flex items-center justify-between pb-4 border-b border-[#14213D]/10">
@@ -251,7 +478,7 @@ export const AdminViews: React.FC<AdminViewsProps> = ({
         </Card>
       </motion.div>
 
-      {/* 4. SYSTEM COMPLIANCE & GOVERNANCE AUDIT LOGS */}
+      {/* 5. SYSTEM COMPLIANCE & GOVERNANCE AUDIT LOGS */}
       {(activeSection === 'admin_overview' ||
         activeSection === 'admin_compliance') && (
         <motion.div variants={staggerItem}>
@@ -336,6 +563,69 @@ export const AdminViews: React.FC<AdminViewsProps> = ({
           </Card>
         </motion.div>
       )}
+
+      {/* ADMIN TRANSACTION AUDIT DETAILS MODAL */}
+      <Modal
+        isOpen={Boolean(selectedTxn)}
+        onClose={() => setSelectedTxn(null)}
+        title="Salary Transaction & Banking Rail Audit"
+        subtitle="Regulated settlement telemetry, FX verification, and clearing house timestamps."
+        footer={
+          <Button variant="primary" onClick={() => setSelectedTxn(null)}>
+            Close Audit Details
+          </Button>
+        }
+      >
+        {selectedTxn && (
+          <div className="space-y-4">
+            <div className="p-4 rounded-xl bg-[#FAF9F6] border border-[#14213D]/10 flex items-center justify-between">
+              <div>
+                <div className="text-xs text-[#252A34]/60 font-mono-tabular">
+                  Reference: {selectedTxn.reference}
+                </div>
+                <div className="text-2xl font-bold font-mono-tabular text-[#14213D] mt-1">
+                  {selectedTxn.amountLocal.toLocaleString()} {selectedTxn.currency}
+                </div>
+                <div className="text-xs text-[#252A34]/65 mt-0.5 font-mono-tabular">
+                  USD Value: ${selectedTxn.amountUsd.toLocaleString()} · FX Locked at{' '}
+                  {selectedTxn.fxRate}
+                </div>
+              </div>
+              <StatusBadge status={selectedTxn.status} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="p-3.5 rounded-lg border border-[#14213D]/10">
+                <div className="text-[#252A34]/55">Beneficiary & Department</div>
+                <div className="font-bold text-[#14213D] text-sm mt-0.5">
+                  {selectedTxn.employeeName}
+                </div>
+                <div className="text-[#252A34]/65">{selectedTxn.department}</div>
+              </div>
+              <div className="p-3.5 rounded-lg border border-[#14213D]/10">
+                <div className="text-[#252A34]/55">Settlement Rail & Type</div>
+                <div className="font-bold text-[#14213D] text-sm mt-0.5">
+                  {selectedTxn.settlementRail}
+                </div>
+                <div className="text-[#252A34]/65">{selectedTxn.type}</div>
+              </div>
+              <div className="p-3.5 rounded-lg border border-[#14213D]/10">
+                <div className="text-[#252A34]/55">Execution Timestamp</div>
+                <div className="font-bold text-[#14213D] text-sm mt-0.5 font-mono-tabular">
+                  {selectedTxn.date}
+                </div>
+              </div>
+              <div className="p-3.5 rounded-lg border border-[#14213D]/10">
+                <div className="text-[#252A34]/55">Regulatory Compliance</div>
+                <div className="font-bold text-[#0F6E46] text-sm mt-0.5 flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Sanctions Cleared</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </motion.div>
   );
 };
