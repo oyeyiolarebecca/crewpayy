@@ -1,7 +1,37 @@
 import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
 import { blaaizService } from '../services/blaaiz.js';
+import { requireAuth, requireCompany } from '../middleware/auth.js';
 
 export const blaaizRouter = Router();
+
+interface RawBodyRequest extends Request {
+  rawBody?: Buffer;
+}
+
+// Provider callbacks use their own signature, not a CrewPay user session.
+blaaizRouter.post('/webhook', (req: RawBodyRequest, res: Response) => {
+  const secret = process.env.BLAAIZ_WEBHOOK_SECRET;
+  const signature = req.header('x-blaaiz-signature');
+  if (!secret || !signature || !req.rawBody) {
+    return res.status(401).json({ error: 'Valid Blaaiz webhook signature required.' });
+  }
+
+  const expected = crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
+  const provided = Buffer.from(signature, 'hex');
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  if (provided.length !== expectedBuffer.length || !crypto.timingSafeEqual(provided, expectedBuffer)) {
+    return res.status(401).json({ error: 'Invalid Blaaiz webhook signature.' });
+  }
+
+  console.log('[Blaaiz Webhook Received]', {
+    event: req.body?.event,
+    transactionId: req.body?.transactionId,
+    status: req.body?.status,
+  });
+  return res.json({ received: true });
+});
+blaaizRouter.use(requireAuth, requireCompany);
 
 // Connection status & environment
 blaaizRouter.get('/status', (req: Request, res: Response) => {
@@ -30,7 +60,6 @@ blaaizRouter.get('/wallets', async (req: Request, res: Response) => {
     return res.status(500).json({ error: err.message });
   }
 });
-
 // Quote calculation: FX rates, fee preview, and total debit (/rate & /fees)
 blaaizRouter.post('/quote', async (req: Request, res: Response) => {
   try {
@@ -115,10 +144,4 @@ blaaizRouter.get('/transactions', async (req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
-});
-
-// Webhook listener for async status updates
-blaaizRouter.post('/webhook', (req: Request, res: Response) => {
-  console.log('[Blaaiz Webhook Received]:', req.body);
-  return res.json({ received: true });
 });

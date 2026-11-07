@@ -19,9 +19,10 @@ interface StoredUser extends User {
 
 const users = new Map<string, StoredUser>();
 const sessions = new Map<string, { userId: string; expiresAt: number }>();
+const PASSWORD_ITERATIONS = 210_000;
 
 function hashPassword(password: string, salt: string): string {
-  return crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return crypto.pbkdf2Sync(password, salt, PASSWORD_ITERATIONS, 64, 'sha512').toString('hex');
 }
 
 function generateToken(userId: string): string {
@@ -75,6 +76,9 @@ export function registerUser(params: {
   preferredCurrency?: string;
 }): { user: User; token: string } {
   const normalizedEmail = params.email.trim().toLowerCase();
+  if (!params.name.trim() || !normalizedEmail || params.password.length < 12) {
+    throw new Error('Name, email, and a password of at least 12 characters are required.');
+  }
   if (users.has(normalizedEmail)) {
     throw new Error('An account with this email already exists.');
   }
@@ -108,8 +112,9 @@ export function loginUser(email: string, password: string): { user: User; token:
     throw new Error('Invalid email or password.');
   }
 
-  const calculatedHash = hashPassword(password, stored.salt);
-  if (calculatedHash !== stored.passwordHash) {
+  const calculatedHash = Buffer.from(hashPassword(password, stored.salt), 'hex');
+  const expectedHash = Buffer.from(stored.passwordHash, 'hex');
+  if (calculatedHash.length !== expectedHash.length || !crypto.timingSafeEqual(calculatedHash, expectedHash)) {
     throw new Error('Invalid email or password.');
   }
 

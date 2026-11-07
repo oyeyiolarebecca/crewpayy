@@ -6,7 +6,15 @@ export const authRouter = Router();
 authRouter.post('/register', (req: Request, res: Response) => {
   try {
     const { name, email, password, role, companyName, preferredCurrency } = req.body;
-    if (!name || !email || !password || !role) {
+    if (
+      typeof name !== 'string' ||
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      (role !== 'company' && role !== 'employee') ||
+      name.trim().length < 2 ||
+      !/^\S+@\S+\.\S+$/.test(email.trim()) ||
+      password.length < 12
+    ) {
       return res.status(400).json({ error: 'Name, email, password, and role are required.' });
     }
 
@@ -15,7 +23,7 @@ authRouter.post('/register', (req: Request, res: Response) => {
       email,
       password,
       role,
-      companyName,
+      companyName: typeof companyName === 'string' ? companyName : '',
       preferredCurrency,
     });
     return res.status(201).json(result);
@@ -27,7 +35,7 @@ authRouter.post('/register', (req: Request, res: Response) => {
 authRouter.post('/login', (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) {
+    if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 

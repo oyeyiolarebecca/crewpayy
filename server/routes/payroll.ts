@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { requireAuth, requireCompany } from '../middleware/auth.js';
 
 export interface EmployeeProfile {
   id: string;
@@ -107,6 +108,7 @@ const employees: EmployeeProfile[] = [
 ];
 
 export const payrollRouter = Router();
+payrollRouter.use(requireAuth, requireCompany);
 
 payrollRouter.get('/employees', (req: Request, res: Response) => {
   return res.json({ employees });
