@@ -680,7 +680,7 @@ export const INITIAL_ADMIN_LOGS: AdminAuditLog[] = [
   {
     id: 'aud_01',
     timestamp: '06 Nov 2026 · 12:14 UTC',
-    actor: 'Rebecca Oyeyiola',
+    actor: 'Amaka Nwosu',
     actorRole: 'VP Finance & Treasury',
     action: 'Locked Spot FX Corridor Rate (USD → EUR @ 0.9200)',
     entityName: 'Meridian Operations UK & EU Ltd.',

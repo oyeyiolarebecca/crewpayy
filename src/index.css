@@ -22,7 +22,12 @@
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-family: var(--font-display);
     letter-spacing: -0.02em;
     text-wrap: balance;
@@ -44,6 +49,24 @@
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+.auth-input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(20, 33, 61, 0.15);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.65rem 0.75rem;
+  color: var(--color-charcoal);
+  font-size: 0.8125rem;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.auth-input:focus {
+  border-color: var(--color-electric);
+  box-shadow: 0 0 0 3px rgba(65, 105, 225, 0.12);
 }
 
 /* Custom subtle scrollbars */

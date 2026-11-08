@@ -29,6 +29,7 @@ import {
   Check,
   UserCheck,
   Sparkles,
+  LogOut,
 } from 'lucide-react';
 import {
   UserRole,
@@ -60,6 +61,8 @@ import { CompanyViews } from './components/company/CompanyViews';
 import { EmployeeViews } from './components/employee/EmployeeViews';
 import { AdminViews } from './components/admin/AdminViews';
 import { RunPayrollModal } from './components/modals/RunPayrollModal';
+import { AuthPage, AuthUser } from './components/auth/AuthPage';
+import { CrewPayMark } from './components/ui/Brand';
 
 interface NavItemConfig {
   id: NavSectionId;
@@ -72,6 +75,12 @@ export default function App() {
   // ==========================================================================
   // APPLICATION STATE
   // ==========================================================================
+  const [session, setSession] = useState<{ user: AuthUser; token: string } | null>(() => {
+    const token = window.localStorage.getItem('crewpay_session_token');
+    const storedUser = window.localStorage.getItem('crewpay_session_user');
+    return token && storedUser ? { token, user: JSON.parse(storedUser) as AuthUser } : null;
+  });
+  const [authChecking, setAuthChecking] = useState(true);
   const [role, setRole] = useState<UserRole>('company');
   const [activeSection, setActiveSection] =
     useState<NavSectionId>('company_dashboard');
@@ -80,6 +89,52 @@ export default function App() {
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!session) {
+      setAuthChecking(false);
+      return;
+    }
+
+    fetch(`${import.meta.env.VITE_API_URL || ''}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error('Session expired');
+        return response.json();
+      })
+      .then(({ user }) => {
+        const nextSession = { token: session.token, user: user as AuthUser };
+        setSession(nextSession);
+        setRole(user.role);
+        window.localStorage.setItem('crewpay_session_user', JSON.stringify(user));
+      })
+      .catch(() => {
+        window.localStorage.removeItem('crewpay_session_token');
+        window.localStorage.removeItem('crewpay_session_user');
+        setSession(null);
+      })
+      .finally(() => setAuthChecking(false));
+  }, []);
+
+  const handleAuthenticated = (user: AuthUser, token: string) => {
+    setSession({ user, token });
+    setRole(user.role);
+    window.localStorage.setItem('crewpay_session_token', token);
+    window.localStorage.setItem('crewpay_session_user', JSON.stringify(user));
+  };
+
+  const handleSignOut = async () => {
+    if (session) {
+      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.token}` },
+      }).catch(() => undefined);
+    }
+    window.localStorage.removeItem('crewpay_session_token');
+    window.localStorage.removeItem('crewpay_session_user');
+    setSession(null);
+  };
 
   // Core Domain State
   const [organisations] = useState<Organisation[]>(ORGANISATIONS);
@@ -255,7 +310,7 @@ export default function App() {
       {
         id: `aud_${Date.now()}`,
         timestamp: 'Just now · UTC',
-        actor: 'Rebecca Oyeyiola',
+        actor: 'Amaka Nwosu',
         actorRole: 'VP Finance & Treasury',
         action: `Disbursed Global Payroll Batch ($${totalDisbursedUsd.toLocaleString()} USD)`,
         entityName: currentOrg.name,
@@ -636,8 +691,20 @@ export default function App() {
 
   const unreadNotifCount = notifications.filter((n) => n.unread).length;
 
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-[#14213D] flex items-center justify-center">
+        <CrewPayMark />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <AuthPage onAuthenticated={handleAuthenticated} />;
+  }
+
   return (
-    <div className="min-h-screen flex bg-[#FAF9F6] text-[#252A34]">
+    <div className="h-screen flex overflow-hidden bg-[#FAF9F6] text-[#252A34]">
       {/* ====================================================================
           DESKTOP SIDEBAR
       ==================================================================== */}
@@ -645,21 +712,17 @@ export default function App() {
         initial={false}
         animate={{ width: sidebarCollapsed ? 80 : 268 }}
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="hidden lg:flex flex-col justify-between bg-[#14213D] text-white shrink-0 border-r border-[#14213D] select-none z-30"
+        className="hidden lg:flex h-screen sticky top-0 flex-col justify-between bg-[#14213D] text-white shrink-0 border-r border-[#14213D] select-none z-30 overflow-hidden"
       >
         <div className="p-4 space-y-5">
           {/* Brand Header */}
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-[#4169E1] text-white flex items-center justify-center font-display font-bold text-base shrink-0 shadow-xs">
-                C
-              </div>
               {!sidebarCollapsed && (
-                <div className="min-w-0">
-                  <div className="font-display font-bold text-lg tracking-tight text-white truncate">
-                    CrewPay
-                  </div>
-                </div>
+                <CrewPayMark />
+              )}
+              {sidebarCollapsed && (
+                <CrewPayMark compact />
               )}
             </div>
             <button
@@ -720,11 +783,10 @@ export default function App() {
                             'info'
                           );
                         }}
-                        className={`w-full px-3.5 py-2 text-left text-xs flex items-center justify-between gap-2 hover:bg-[#FAF9F6] cursor-pointer ${
-                          org.id === selectedOrgId
-                            ? 'bg-[#EEEAFE]/70 font-bold text-[#14213D]'
-                            : ''
-                        }`}
+                        className={`w-full px-3.5 py-2 text-left text-xs flex items-center justify-between gap-2 hover:bg-[#FAF9F6] cursor-pointer ${org.id === selectedOrgId
+                          ? 'bg-[#EEEAFE]/70 font-bold text-[#14213D]'
+                          : ''
+                          }`}
                       >
                         <div className="min-w-0">
                           <div className="truncate">{org.name}</div>
@@ -757,11 +819,10 @@ export default function App() {
                   key={tab.id}
                   type="button"
                   onClick={() => handleSwitchRole(tab.id)}
-                  className={`py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    role === tab.id
-                      ? 'bg-[#4169E1] text-white shadow-xs'
-                      : 'text-white/70 hover:text-white'
-                  }`}
+                  className={`py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${role === tab.id
+                    ? 'bg-[#4169E1] text-white shadow-xs'
+                    : 'text-white/70 hover:text-white'
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -776,8 +837,8 @@ export default function App() {
                 {role === 'company'
                   ? 'Financial Operations'
                   : role === 'employee'
-                  ? 'Employee Self-Service'
-                  : 'Platform Governance'}
+                    ? 'Employee Self-Service'
+                    : 'Platform Governance'}
               </div>
             )}
             {navItems.map((item) => {
@@ -788,11 +849,10 @@ export default function App() {
                   type="button"
                   onClick={() => setActiveSection(item.id)}
                   title={sidebarCollapsed ? item.label : undefined}
-                  className={`relative w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ${
-                    isActive
-                      ? 'text-white font-semibold'
-                      : 'text-white/70 hover:text-white hover:bg-white/6'
-                  }`}
+                  className={`relative w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ${isActive
+                    ? 'text-white font-semibold'
+                    : 'text-white/70 hover:text-white hover:bg-white/6'
+                    }`}
                 >
                   {isActive && (
                     <motion.div
@@ -815,11 +875,10 @@ export default function App() {
                     typeof item.badgeCount === 'number' &&
                     item.badgeCount > 0 && (
                       <span
-                        className={`relative z-10 px-2 py-0.5 text-[11px] font-mono-tabular font-bold rounded-md ${
-                          isActive
-                            ? 'bg-white text-[#14213D]'
-                            : 'bg-[#FFE0D1] text-[#14213D]'
-                        }`}
+                        className={`relative z-10 px-2 py-0.5 text-[11px] font-mono-tabular font-bold rounded-md ${isActive
+                          ? 'bg-white text-[#14213D]'
+                          : 'bg-[#FFE0D1] text-[#14213D]'
+                          }`}
                       >
                         {item.badgeCount}
                       </span>
@@ -842,15 +901,15 @@ export default function App() {
                   {role === 'employee'
                     ? 'Amara Okafor'
                     : role === 'admin'
-                    ? 'System Compliance Lead'
-                    : 'Rebecca Oyeyiola'}
+                      ? 'System Compliance Lead'
+                      : 'Amaka Nwosu'}
                 </div>
                 <div className="text-[11px] text-white/60 truncate">
                   {role === 'employee'
                     ? 'Principal Engineer · London'
                     : role === 'admin'
-                    ? 'Global Risk & KYB Officer'
-                    : 'VP Finance & Treasury'}
+                      ? 'Global Risk & KYB Officer'
+                      : 'VP Finance & Treasury'}
                 </div>
               </div>
             )}
@@ -876,18 +935,11 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="relative z-10 w-72 bg-[#14213D] text-white h-full flex flex-col justify-between p-5"
+              className="relative z-10 w-72 bg-[#14213D] text-white h-full flex flex-col justify-between p-5 overflow-hidden"
             >
               <div className="space-y-5">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-[#4169E1] text-white flex items-center justify-center font-bold">
-                      C
-                    </div>
-                    <span className="font-display font-bold text-lg">
-                      CrewPay
-                    </span>
-                  </div>
+                  <CrewPayMark />
                   <button
                     type="button"
                     onClick={() => setMobileMenuOpen(false)}
@@ -910,11 +962,10 @@ export default function App() {
                       key={tab.id}
                       type="button"
                       onClick={() => handleSwitchRole(tab.id)}
-                      className={`py-1.5 text-xs font-semibold rounded-lg ${
-                        role === tab.id
-                          ? 'bg-[#4169E1] text-white'
-                          : 'text-white/70'
-                      }`}
+                      className={`py-1.5 text-xs font-semibold rounded-lg ${role === tab.id
+                        ? 'bg-[#4169E1] text-white'
+                        : 'text-white/70'
+                        }`}
                     >
                       {tab.label}
                     </button>
@@ -930,11 +981,10 @@ export default function App() {
                         setActiveSection(item.id);
                         setMobileMenuOpen(false);
                       }}
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium ${
-                        activeSection === item.id
-                          ? 'bg-[#4169E1] text-white font-semibold'
-                          : 'text-white/75 hover:bg-white/8'
-                      }`}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium ${activeSection === item.id
+                        ? 'bg-[#4169E1] text-white font-semibold'
+                        : 'text-white/75 hover:bg-white/8'
+                        }`}
                     >
                       <span className="flex items-center gap-3">
                         {item.icon}
@@ -952,7 +1002,7 @@ export default function App() {
       {/* ====================================================================
           MAIN CONTENT VIEWPORT
       ==================================================================== */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-y-auto">
         {/* TOP NAVIGATION BAR */}
         <header className="sticky top-0 z-20 bg-white/95 border-b border-[#14213D]/10 px-4 sm:px-7 py-3.5 flex items-center justify-between gap-4">
           {/* Left: Mobile Menu Trigger + Breadcrumb & Page Title */}
@@ -1104,9 +1154,8 @@ export default function App() {
                             );
                             setNotifMenuOpen(false);
                           }}
-                          className={`w-full px-4 py-3 text-left hover:bg-[#FAF9F6] transition-colors cursor-pointer ${
-                            n.unread ? 'bg-[#EEEAFE]/35' : ''
-                          }`}
+                          className={`w-full px-4 py-3 text-left hover:bg-[#FAF9F6] transition-colors cursor-pointer ${n.unread ? 'bg-[#EEEAFE]/35' : ''
+                            }`}
                         >
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-bold text-[#14213D]">
@@ -1141,8 +1190,8 @@ export default function App() {
                   {role === 'company'
                     ? 'Company View'
                     : role === 'employee'
-                    ? 'Employee View'
-                    : 'Admin View'}
+                      ? 'Employee View'
+                      : 'Admin View'}
                 </span>
                 <ChevronDown className="w-3.5 h-3.5 text-[#252A34]/60" />
               </button>
@@ -1169,7 +1218,7 @@ export default function App() {
                         {
                           id: 'company',
                           title: 'Company Finance & Ops',
-                          sub: 'Rebecca Oyeyiola · VP Finance',
+                          sub: 'Amaka Nwosu · VP Finance',
                         },
                         {
                           id: 'employee',
@@ -1187,11 +1236,10 @@ export default function App() {
                         key={opt.id}
                         type="button"
                         onClick={() => handleSwitchRole(opt.id)}
-                        className={`w-full px-4 py-2.5 text-left text-xs flex items-center justify-between hover:bg-[#FAF9F6] cursor-pointer ${
-                          role === opt.id
-                            ? 'bg-[#EEEAFE]/65 font-bold text-[#14213D]'
-                            : ''
-                        }`}
+                        className={`w-full px-4 py-2.5 text-left text-xs flex items-center justify-between hover:bg-[#FAF9F6] cursor-pointer ${role === opt.id
+                          ? 'bg-[#EEEAFE]/65 font-bold text-[#14213D]'
+                          : ''
+                          }`}
                       >
                         <div>
                           <div>{opt.title}</div>
@@ -1204,6 +1252,16 @@ export default function App() {
                         )}
                       </button>
                     ))}
+                    <div className="mt-1 pt-1 border-t border-[#14213D]/8">
+                      <button
+                        type="button"
+                        onClick={handleSignOut}
+                        className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#B94A48] hover:bg-[#FFE0D1]/45 flex items-center gap-2 cursor-pointer"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        Sign out
+                      </button>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1234,7 +1292,7 @@ export default function App() {
                   orgEmployeeCount={
                     currentOrg.id === 'org_global'
                       ? currentOrg.employeesCount +
-                        (employees.length - INITIAL_EMPLOYEES.length)
+                      (employees.length - INITIAL_EMPLOYEES.length)
                       : currentOrg.employeesCount
                   }
                   onOpenRunPayroll={(cycle) => setActivePayrollCycle(cycle)}

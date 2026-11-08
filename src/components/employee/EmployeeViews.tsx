@@ -57,14 +57,14 @@ interface EmployeeViewsProps {
 }
 
 const FX_RATES: Record<string, { rate: number; symbol: string; name: string }> =
-  {
-    GBP: { rate: 0.78, symbol: '£', name: 'British Pound' },
-    EUR: { rate: 0.92, symbol: '€', name: 'Euro' },
-    USD: { rate: 1.0, symbol: '$', name: 'US Dollar' },
-    NGN: { rate: 1600.0, symbol: '₦', name: 'Nigerian Naira' },
-    SGD: { rate: 1.35, symbol: 'S$', name: 'Singapore Dollar' },
-    CAD: { rate: 1.38, symbol: 'C$', name: 'Canadian Dollar' },
-  };
+{
+  GBP: { rate: 0.78, symbol: '£', name: 'British Pound' },
+  EUR: { rate: 0.92, symbol: '€', name: 'Euro' },
+  USD: { rate: 1.0, symbol: '$', name: 'US Dollar' },
+  NGN: { rate: 1600.0, symbol: '₦', name: 'Nigerian Naira' },
+  SGD: { rate: 1.35, symbol: 'S$', name: 'Singapore Dollar' },
+  CAD: { rate: 1.38, symbol: 'C$', name: 'Canadian Dollar' },
+};
 
 export const EmployeeViews: React.FC<EmployeeViewsProps> = ({
   activeSection,
@@ -121,13 +121,13 @@ export const EmployeeViews: React.FC<EmployeeViewsProps> = ({
 
   const primaryNetLocal = Math.round(
     monthlyNetUsd *
-      (employee.primaryCurrencySplit / 100) *
-      primaryFx.rate
+    (employee.primaryCurrencySplit / 100) *
+    primaryFx.rate
   );
   const secondaryNetLocal = Math.round(
     monthlyNetUsd *
-      ((100 - employee.primaryCurrencySplit) / 100) *
-      secondaryFx.rate
+    ((100 - employee.primaryCurrencySplit) / 100) *
+    secondaryFx.rate
   );
 
   const handleSaveCurrencySplit = (e: React.FormEvent) => {
@@ -1072,7 +1072,7 @@ export const EmployeeViews: React.FC<EmployeeViewsProps> = ({
                   </div>
                   <div className="text-xs">
                     <div className="font-bold text-[#14213D]">
-                      Rebecca Oyeyiola (VP Finance)
+                      Amaka Nwosu (VP Finance)
                     </div>
                     <p className="text-[#252A34]/70 mt-0.5">
                       November cycle FX rates have been locked at mid-market. Instant settlement cleared across SEPA and FPS rails.
@@ -1169,8 +1169,8 @@ export const EmployeeViews: React.FC<EmployeeViewsProps> = ({
                   {FX_RATES[primaryCurr]?.symbol}
                   {Math.round(
                     monthlyNetUsd *
-                      (splitPercent / 100) *
-                      (FX_RATES[primaryCurr]?.rate || 1)
+                    (splitPercent / 100) *
+                    (FX_RATES[primaryCurr]?.rate || 1)
                   ).toLocaleString()}{' '}
                   {primaryCurr}
                 </div>
@@ -1181,8 +1181,8 @@ export const EmployeeViews: React.FC<EmployeeViewsProps> = ({
                   {FX_RATES[secondaryCurr]?.symbol}
                   {Math.round(
                     monthlyNetUsd *
-                      ((100 - splitPercent) / 100) *
-                      (FX_RATES[secondaryCurr]?.rate || 1)
+                    ((100 - splitPercent) / 100) *
+                    (FX_RATES[secondaryCurr]?.rate || 1)
                   ).toLocaleString()}{' '}
                   {secondaryCurr}
                 </div>
